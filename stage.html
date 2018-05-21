@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <title>WebVR Demo</title>
@@ -48,6 +49,177 @@
 <script src="http://threejs.org/build/three.js"></script>
 <script src="http://threejs.org/examples/js/controls/VRControls.js"></script>
 <script src="http://threejs.org/examples/js/effects/VREffect.js"></script>
-<script src='https://cdn.jsdelivr.net/npm/webvr-polyfill@latest/build/webvr-polyfill.js'></script>
+<script src='https://cdn.jsdelivr.net/npm/webvr-polyfill@0.9.41/build/webvr-polyfill.js'></script>
 <script src="https://googlevr.github.io/webvr-ui/build/webvr-ui.min.js"></script>
+<script>
+  // Last time the scene was rendered.
+  let lastRenderTime = 0;
+  // Currently active VRDisplay.
+  let vrDisplay;
+  // How big of a box to render. **Skybox: size skybox
+  const boxSize = 5;
+  // Various global THREE.Objects.
+  let scene;
+  let cube;
+  let textMesh;
+  let controls;
+  let effect;
+  let camera;
+  // EnterVRButton for rendering enter/exit UI.
+  let vrButton;
+
+  //User Profile
+  const profile = JSON.parse(localStorage.getItem("profile"));
+
+  function onLoad() {
+    /* Threejs Section */
+    // configuring crossOrigin
+    THREE.TextureLoader.prototype.crossOrigin = '';
+
+    // Setup three.js WebGL renderer. Note: Antialiasing is a big performance hit.
+    // Only enable it if you actually need to.
+    const renderer = new THREE.WebGLRenderer({antialias: true});
+    renderer.setPixelRatio(window.devicePixelRatio);
+
+    // Append the canvas element created by the renderer to document body element.
+    document.body.appendChild(renderer.domElement);
+
+    // Create a three.js scene.
+    scene = new THREE.Scene();
+
+    // Create a three.js camera.
+    const aspect = window.innerWidth / window.innerHeight;
+    camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 10000);
+
+    controls = new THREE.VRControls(camera);
+
+    //*Set standing to 'true' to indicate that the user is standing
+    controls.standing = true;
+    //*Set the camera vertical position to the eye level of user
+    camera.position.y = controls.userHeight;
+
+    // Apply VR stereo rendering to renderer.
+    effect = new THREE.VREffect(renderer);
+    effect.setSize(window.innerWidth, window.innerHeight);
+
+
+    //Add Skybox
+    const desertGeometry = new THREE.CubeGeometry(10000, 10000, 10000);
+    const desertMaterials = [
+      new THREE.MeshBasicMaterial({ map: new THREE.TextureLoader().load("https://cdn.auth0.com/blog/webvr/desertsky_front.png"), side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ map: new THREE.TextureLoader().load("https://cdn.auth0.com/blog/webvr/desertsky_back.png"), side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ map: new THREE.TextureLoader().load("https://cdn.auth0.com/blog/webvr/desertsky_up.png"), side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ map: new THREE.TextureLoader().load("https://cdn.auth0.com/blog/webvr/desertsky_down.png"), side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ map: new THREE.TextureLoader().load("https://cdn.auth0.com/blog/webvr/desertsky_right.png"), side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ map: new THREE.TextureLoader().load("https://cdn.auth0.com/blog/webvr/desertsky_left.png"), side: THREE.DoubleSide })
+    ];
+
+    const desertMaterial = new THREE.MultiMaterial(desertMaterials);
+
+    const desert = new THREE.Mesh(desertGeometry, desertMaterial);
+
+    console.log(desert);
+
+    scene.add(desert);
+
+    const ambientLight = new THREE.AmbientLight(0xffffff);
+    scene.add(ambientLight);
+
+    /* Create 3D objects. */
+
+    //Add name text
+    const loader = new THREE.FontLoader();
+
+    loader.load('https://cdn.auth0.com/blog/webvr/helvetiker_regular.typeface.json', function (font) {
+      const textGeometry = new THREE.TextGeometry(profile.name, {
+        font: font,
+        size: 80,
+        height: 5,
+        curveSegments: 12,
+        bevelEnabled: true,
+        bevelThickness: 3,
+        bevelSize: 2,
+        bevelSegments: 5
+      });
+
+      const textMaterial = new THREE.MeshBasicMaterial();
+
+      textMesh = new THREE.Mesh(textGeometry, textMaterial);
+
+      textMesh.position.set(-400, controls.userHeight, -550.5);
+
+      console.log(textMesh);
+
+      scene.add(textMesh);
+    });
+
+    /* Screen and VR Setup */
+
+    window.addEventListener('resize', onResize, true);
+    window.addEventListener('vrdisplaypresentchange', onResize, true);
+
+    // Initialize the WebVR UI.
+    const uiOptions = {
+      color: 'black',
+      background: 'white',
+      corners: 'square'
+    };
+    vrButton = new webvrui.EnterVRButton(renderer.domElement, uiOptions);
+    vrButton.on('exit', function () {
+      camera.quaternion.set(0, 0, 0, 1);
+      camera.position.set(0, controls.userHeight, 0);
+    });
+    vrButton.on('hide', function () {
+      document.getElementById('ui').style.display = 'none';
+    });
+    vrButton.on('show', function () {
+      document.getElementById('ui').style.display = 'inherit';
+    });
+    document.getElementById('vr-button').appendChild(vrButton.domElement);
+    document.getElementById('magic-window').addEventListener('click', function () {
+      vrButton.requestEnterFullscreen();
+    });
+
+    navigator.getVRDisplays().then(function (displays) {
+      if (displays.length > 0) {
+        vrDisplay = displays[0];
+        vrDisplay.requestAnimationFrame(animate);
+      }
+    });
+  }
+
+  // Request animation frame loop function
+  function animate(timestamp) {
+    const delta = Math.min(timestamp - lastRenderTime, 500);
+    lastRenderTime = timestamp;
+
+    // Apply rotation to cube mesh
+    if (cube) {
+      cube.rotation.y += delta * 0.0006;
+    }
+
+    if (textMesh) {
+      textMesh.rotation.x += delta * 0.0003;
+      textMesh.rotation.y += delta * 0.0003;
+      textMesh.rotation.z += delta * 0.0003;
+    }
+
+    // Only update controls if we're presenting.
+    if (vrButton.isPresenting()) {
+      controls.update();
+    }
+    // Render the scene.
+    effect.render(scene, camera);
+
+    vrDisplay.requestAnimationFrame(animate);
+  }
+
+  function onResize(e) {
+    effect.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+  }
+
+  window.addEventListener('load', onLoad);
+</script>
 </html>
